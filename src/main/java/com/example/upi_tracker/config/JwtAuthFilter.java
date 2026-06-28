@@ -27,14 +27,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        // ✅ SKIP ALL PUBLIC ROUTES
+        // ✅ PUBLIC ROUTES (NO AUTH)
         if (
-                path.equals("/") ||
+                path.startsWith("/") ||
                 path.startsWith("/api/users/login") ||
                 path.startsWith("/api/users/register") ||
                 path.startsWith("/error") ||
-                path.startsWith("/swagger-ui") ||
                 path.startsWith("/v3/api-docs") ||
+                path.startsWith("/swagger-ui") ||
                 path.startsWith("/swagger-resources") ||
                 path.startsWith("/webjars")
         ) {
@@ -42,13 +42,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        // ✅ GET TOKEN
+        // ✅ JWT PROCESSING
         String header = request.getHeader("Authorization");
 
         if (header != null && header.startsWith("Bearer ")) {
-            String token = header.substring(7);
-
             try {
+                String token = header.substring(7);
+
                 if (jwtUtil.isValid(token)) {
                     String email = jwtUtil.extractEmail(token);
 
@@ -62,7 +62,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(auth);
                 }
             } catch (Exception e) {
-                // ❗ always clear context on failure
                 SecurityContextHolder.clearContext();
             }
         }
