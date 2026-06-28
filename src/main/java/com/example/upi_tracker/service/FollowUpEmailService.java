@@ -18,7 +18,8 @@ import java.util.Set;
 @Service
 public class FollowUpEmailService {
 
-    @Autowired private JavaMailSender mailSender;
+  @Autowired(required = false)
+private JavaMailSender mailSender;
     @Autowired private FailedTransactionRepository repository;
     @Autowired private EmailTemplateService templates;
 
@@ -98,33 +99,31 @@ public class FollowUpEmailService {
         return summary + log;
     }
 
-    private boolean fire(FailedTransaction txn, String key, boolean manual) {
-        String subject = getSubject(txn, key);
-        String body    = getBody(txn, key);
+private boolean fire(FailedTransaction txn, String key, boolean manual) {
+    String subject = getSubject(txn, key);
+    String body    = getBody(txn, key);
 
-        if (devMode) {
-            System.out.println("[FollowUp DEV] Would send [" + key + "] to "
-                    + txn.getUser().getEmail() + " — " + subject);
-            markSent(txn, key);
-            return true;
-        }
-
-        try {
-            SimpleMailMessage msg = new SimpleMailMessage();
-            msg.setFrom(fromEmail);
-            msg.setTo(txn.getUser().getEmail());
-            msg.setSubject(subject);
-            msg.setText(body);
-            mailSender.send(msg);
-            markSent(txn, key);
-            System.out.println("[FollowUp] Sent [" + key + "] to "
-                    + txn.getUser().getEmail());
-            return true;
-        } catch (Exception e) {
-            System.err.println("[FollowUp] Failed [" + key + "]: " + e.getMessage());
-            return false;
-        }
+    if (devMode || mailSender == null) {
+        System.out.println("[FollowUp DEV] Would send [" + key + "] to "
+            + txn.getUser().getEmail() + " — " + subject);
+        markSent(txn, key);
+        return true;
     }
+
+    try {
+        SimpleMailMessage msg = new SimpleMailMessage();
+        msg.setFrom(fromEmail);
+        msg.setTo(txn.getUser().getEmail());
+        msg.setSubject(subject);
+        msg.setText(body);
+        mailSender.send(msg);
+        markSent(txn, key);
+        return true;
+    } catch (Exception e) {
+        System.err.println("[FollowUp] Failed [" + key + "]: " + e.getMessage());
+        return false;
+    }
+}
 
     private String getSubject(FailedTransaction txn, String key) {
         return switch (key) {
