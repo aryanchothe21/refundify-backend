@@ -3,6 +3,7 @@ package com.example.upi_tracker.config;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -33,15 +34,20 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(auth -> auth
 
-                // ✅ PUBLIC ENDPOINTS (NO JWT REQUIRED)
+                // ✅ PUBLIC ENDPOINTS
                 .requestMatchers(
-                    "/",
-                    "/error",
-                    "/api/users/register",
-                    "/api/users/login",
-                    "/swagger-ui/**",
-                    "/v3/api-docs/**"
+                        "/",
+                        "/error",
+                        "/api/users/login",
+                        "/api/users/register",
+                        "/v3/api-docs/**",
+                        "/swagger-ui/**",
+                        "/swagger-resources/**",
+                        "/webjars/**"
                 ).permitAll()
+
+                // ✅ PRE-FLIGHT REQUESTS (CRITICAL FIX FOR FRONTEND)
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                 // 🔒 EVERYTHING ELSE SECURED
                 .anyRequest().authenticated()
@@ -57,14 +63,11 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
 
         config.setAllowedOriginPatterns(List.of(
-            "http://localhost:5173",
-            "https://refundify-frontend.onrender.com"
+                "http://localhost:5173",
+                "https://refundify-frontend.onrender.com"
         ));
 
-        config.setAllowedMethods(List.of(
-            "GET", "POST", "PUT", "DELETE", "OPTIONS"
-        ));
-
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
 
