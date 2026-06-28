@@ -27,11 +27,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        // ✅ PUBLIC ROUTES (NO JWT REQUIRED)
+        // ✅ SKIP ALL PUBLIC ROUTES
         if (
                 path.equals("/") ||
                 path.startsWith("/api/users/login") ||
                 path.startsWith("/api/users/register") ||
+                path.startsWith("/error") ||
                 path.startsWith("/swagger-ui") ||
                 path.startsWith("/v3/api-docs") ||
                 path.startsWith("/swagger-resources") ||
@@ -41,7 +42,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        // ✅ JWT CHECK FOR PROTECTED ROUTES
+        // ✅ GET TOKEN
         String header = request.getHeader("Authorization");
 
         if (header != null && header.startsWith("Bearer ")) {
@@ -61,7 +62,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(auth);
                 }
             } catch (Exception e) {
-                // If token is invalid → just continue (Spring Security will handle)
+                // ❗ always clear context on failure
                 SecurityContextHolder.clearContext();
             }
         }
