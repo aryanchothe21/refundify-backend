@@ -16,24 +16,56 @@ import java.util.Collections;
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
 
-    @Autowired private JwtUtil jwtUtil;
+    @Autowired
+    private JwtUtil jwtUtil;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response, FilterChain chain)
+                                    HttpServletResponse response,
+                                    FilterChain chain)
             throws ServletException, IOException {
 
+        String path = request.getRequestURI();
+
+        // ✅ PUBLIC ROUTES (NO JWT REQUIRED)
+        if (
+                path.equals("/") ||
+                path.startsWith("/api/users/login") ||
+                path.startsWith("/api/users/register") ||
+                path.startsWith("/swagger-ui") ||
+                path.startsWith("/v3/api-docs") ||
+                path.startsWith("/swagger-resources") ||
+                path.startsWith("/webjars")
+        ) {
+            chain.doFilter(request, response);
+            return;
+        }
+
+        // ✅ JWT CHECK FOR PROTECTED ROUTES
         String header = request.getHeader("Authorization");
 
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
-            if (jwtUtil.isValid(token)) {
-                String email = jwtUtil.extractEmail(token);
-                var authToken = new UsernamePasswordAuthenticationToken(
-                        email, null, Collections.emptyList());
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+
+            try {
+                if (jwtUtil.isValid(token)) {
+                    String email = jwtUtil.extractEmail(token);
+
+                    UsernamePasswordAuthenticationToken auth =
+                            new UsernamePasswordAuthenticationToken(
+                                    email,
+                                    null,
+                                    Collections.emptyList()
+                            );
+
+                    SecurityContextHolder.getContext().setAuthentication(auth);
+                }
+            } catch (Exception e) {
+                // If token is invalid → just continue (Spring Security will handle)
+                SecurityContextHolder.clearContext();
             }
         }
+
         chain.doFilter(request, response);
     }
 }
