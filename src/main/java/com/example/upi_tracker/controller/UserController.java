@@ -27,36 +27,18 @@ public class UserController {
         try {
             User user = userService.register(request);
 
-            return ResponseEntity.ok(
-                    Map.of(
-                            "message", "User registered successfully",
-                            "userId", user.getId(),
-                            "name", user.getName(),
-                            "email", user.getEmail()
-                    )
-            );
+            return ResponseEntity.ok(Map.of(
+                    "message", "User registered successfully",
+                    "userId", user.getId(),
+                    "name", user.getName(),
+                    "email", user.getEmail()
+            ));
+
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(
                     Map.of("error", e.getMessage())
             );
         }
-    }
-
-    @GetMapping("/by-email/{email}")
-    @Operation(
-            summary = "Find a user by email",
-            description = "Used by the frontend to resolve a user's ID after login"
-    )
-    public ResponseEntity<?> getByEmail(@PathVariable String email) {
-        return userService.findByEmail(email)
-                .map(u -> ResponseEntity.ok((Object) Map.of(
-                        "userId", u.getId(),
-                        "name", u.getName(),
-                        "email", u.getEmail()
-                )))
-                .orElse(ResponseEntity.status(404).body(
-                        Map.of("error", "No account found for this email")
-                ));
     }
 
     @PostMapping("/login")
@@ -75,9 +57,23 @@ public class UserController {
                     "name", user.getName(),
                     "email", user.getEmail()
             ));
+
         } catch (RuntimeException e) {
             return ResponseEntity.status(401)
                     .body(Map.of("error", e.getMessage()));
         }
+    }
+
+    @GetMapping("/by-email/{email}")
+    @Operation(summary = "Find user by email")
+    public ResponseEntity<?> getByEmail(@PathVariable String email) {
+        return userService.findByEmail(email)
+                .map(u -> ResponseEntity.ok(Map.of(
+                        "userId", u.getId(),
+                        "name", u.getName(),
+                        "email", u.getEmail()
+                )))
+                .orElse(ResponseEntity.status(404)
+                        .body(Map.of("error", "No account found")));
     }
 }
