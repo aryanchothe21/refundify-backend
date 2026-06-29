@@ -26,47 +26,25 @@ public class TransactionController {
     @Autowired
     private AiClassifierService aiClassifierService;
 
-    @PostMapping("/scan-sms")
+   @PostMapping("/scan-sms")
     public ResponseEntity<?> scanSms(@RequestBody SmsRequest request,
                                      Authentication auth) {
         try {
             User user = userService.findByEmail(auth.getName())
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            // Check reversal BEFORE processing
+            // 1. Get AI Analysis
             AiClassifierService.FullAnalysisResult preview =
                     aiClassifierService.analyzeCompletely(request.getSms());
 
-            if (preview.isReversal) {
-                java.util.Map<String, Object> reversalResponse = new java.util.HashMap<>();
-                reversalResponse.put("type",               "REVERSAL");
-                reversalResponse.put("message",            "Money is being returned!");
-                reversalResponse.put("amount",             preview.amount);
-                reversalResponse.put("recoveryScore",      100);
-                reversalResponse.put("recoveryReasoning",  preview.recoveryReasoning);
-                reversalResponse.put("recommendedAction",  preview.recommendedAction);
-                reversalResponse.put("expectedResolutionDays", 1);
-                reversalResponse.put("escalationNeeded",   false);
-                return ResponseEntity.ok(reversalResponse);
-            }
-
-            if (!preview.isFailure) {
-                return ResponseEntity.badRequest().body(
-                        java.util.Map.of("error",
-                                "This appears to be a successful transaction or " +
-                                        "informational message. No tracking needed."));
-            }
-
-            ScanResult result = new ScanResult(null, null, null, 0, false);
-
-            // Build transaction from existing analysis
+            // 2. Extract Amount
             java.math.BigDecimal finalAmount = preview.amount;
             if (finalAmount == null || finalAmount.compareTo(java.math.BigDecimal.ZERO) == 0) {
                 finalAmount = aiClassifierService.extractAmountFromSms(request.getSms());
             }
 
-            com.example.upi_tracker.entity.FailedTransaction txn =
-                    new com.example.upi_tracker.entity.FailedTransaction();
+            // 3. Start building the database transaction object for ALL scenarios
+            FailedTransaction txn = new FailedTransaction();
             txn.setUser(user);
             txn.setRawSms(request.getSms());
             txn.setAmount(finalAmount);
@@ -74,20 +52,52 @@ public class TransactionController {
                     ? "REF-" + System.currentTimeMillis() : preview.upiRef);
             txn.setMerchantName(preview.merchantName == null || preview.merchantName.isBlank()
                     ? "Unknown Merchant" : preview.merchantName);
-            txn.setFailureType(preview.failureType == null
-                    ? "BANK_ERROR" : preview.failureType);
+
+            // 4. Handle Reversal (THE FIX IS HERE)
+            if (preview.isReversal) {
+                txn.setFailureType("REFUND_COMPLETED");
+                txn.setRecoveryScore(100);
+                txn.setStatus("RESOLVED");
+                txn.setResolved(true);
+                txn.setFailedAt(java.time.LocalDateTime.now());
+                txn.setDeadlineDate(java.time.LocalDate.now());
+
+                // SAVE IT TO THE DATABASE!
+                FailedTransaction saved = transactionService.saveTransaction(txn);
+
+                Map<String, Object> reversalResponse = new HashMap<>();
+                reversalResponse.put("type",               "REVERSAL");
+                reversalResponse.put("message",            "Money is already being returned!");
+                reversalResponse.put("transactionId",      saved.getId()); // Now we have a real DB ID!
+                reversalResponse.put("amount",             saved.getAmount());
+                reversalResponse.put("recoveryScore",      100);
+                reversalResponse.put("recoveryReasoning",  preview.recoveryReasoning);
+                reversalResponse.put("recommendedAction",  preview.recommendedAction);
+                reversalResponse.put("expectedResolutionDays", 0);
+                reversalResponse.put("escalationNeeded",   false);
+                return ResponseEntity.ok(reversalResponse);
+            }
+
+            // 5. Kick out non-failures
+            if (!preview.isFailure) {
+                return ResponseEntity.badRequest().body(
+                        Map.of("error", "This appears to be a successful transaction or informational message. No tracking needed."));
+            }
+
+            // 6. Handle Standard Failures
+            txn.setFailureType(preview.failureType == null ? "BANK_ERROR" : preview.failureType);
             txn.setRecoveryScore(preview.recoveryScore);
             txn.setStatus("PENDING_RECOVERY");
-            txn.setFailedAt(java.time.LocalDateTime.now());
             txn.setResolved(false);
+            txn.setFailedAt(java.time.LocalDateTime.now());
             txn.setDeadlineDate(preview.rbiApplies
                     ? java.time.LocalDate.now().plusDays(5)
                     : java.time.LocalDate.now().plusDays(3));
 
-            com.example.upi_tracker.entity.FailedTransaction saved =
-                    transactionService.saveTransaction(txn);
+            // SAVE IT TO THE DATABASE!
+            FailedTransaction saved = transactionService.saveTransaction(txn);
 
-            java.util.Map<String, Object> response = new java.util.HashMap<>();
+            Map<String, Object> response = new HashMap<>();
             response.put("type",                  "FAILURE");
             response.put("message",               "Failed transaction detected and saved");
             response.put("transactionId",         saved.getId());
@@ -105,11 +115,9 @@ public class TransactionController {
             return ResponseEntity.ok(response);
 
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(
-                    java.util.Map.of("error", e.getMessage()));
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
-
     @GetMapping("/me")
     public ResponseEntity<List<FailedTransaction>> getMyTransactions(
             Authentication auth) {
