@@ -27,43 +27,51 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        // ✅ PUBLIC ROUTES (NO AUTH)
+        // ✅ PUBLIC ROUTES (SKIP JWT CHECK)
         if (
-                path.startsWith("/") ||
                 path.startsWith("/api/users/login") ||
                 path.startsWith("/api/users/register") ||
-                path.startsWith("/error") ||
                 path.startsWith("/v3/api-docs") ||
                 path.startsWith("/swagger-ui") ||
                 path.startsWith("/swagger-resources") ||
-                path.startsWith("/webjars")
+                path.startsWith("/webjars") ||
+                path.startsWith("/error")
         ) {
             chain.doFilter(request, response);
             return;
         }
 
-        // ✅ JWT PROCESSING
+        // 🔥 GET TOKEN
         String header = request.getHeader("Authorization");
 
-        if (header != null && header.startsWith("Bearer ")) {
-            try {
-                String token = header.substring(7);
+        // ❌ NO TOKEN → continue WITHOUT authentication
+        if (header == null || !header.startsWith("Bearer ")) {
+            chain.doFilter(request, response);
+            return;
+        }
 
-                if (jwtUtil.isValid(token)) {
-                    String email = jwtUtil.extractEmail(token);
+        String token = header.substring(7);
 
-                    UsernamePasswordAuthenticationToken auth =
-                            new UsernamePasswordAuthenticationToken(
-                                    email,
-                                    null,
-                                    Collections.emptyList()
-                            );
+        try {
+            // 🔥 VALIDATE TOKEN
+            if (jwtUtil.isValid(token)) {
 
-                    SecurityContextHolder.getContext().setAuthentication(auth);
-                }
-            } catch (Exception e) {
+                String email = jwtUtil.extractEmail(token);
+
+                UsernamePasswordAuthenticationToken auth =
+                        new UsernamePasswordAuthenticationToken(
+                                email,
+                                null,
+                                Collections.emptyList()
+                        );
+
+                SecurityContextHolder.getContext().setAuthentication(auth);
+            } else {
                 SecurityContextHolder.clearContext();
             }
+
+        } catch (Exception e) {
+            SecurityContextHolder.clearContext();
         }
 
         chain.doFilter(request, response);
