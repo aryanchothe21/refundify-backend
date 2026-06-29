@@ -6,8 +6,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -192,6 +192,9 @@ public class AiClassifierService {
     @SuppressWarnings("unchecked")
     private String extractText(Map<String, Object> body) {
         try {
+            if (!body.containsKey("candidates")) {
+                throw new RuntimeException("API did not return candidates. Body: " + body);
+            }
             var candidates = (List<Map<String, Object>>) body.get("candidates");
             var content = (Map<String, Object>) candidates.get(0).get("content");
             var parts = (List<Map<String, Object>>) content.get("parts");
@@ -241,63 +244,21 @@ public class AiClassifierService {
 
             // ---------------- FAILURE TYPE ----------------
 
-            String type = node.path("failure_type")
-                    .asText("")
-                    .trim()
-                    .toUpperCase();
-
+            // ---------------- FAILURE TYPE ----------------
+            
+            // Just trust the AI's classification directly, defaulting to BANK_ERROR if missing
+            String aiType = node.path("failure_type").asText("BANK_ERROR").trim().toUpperCase();
+            
+            // Fix minor variations AI might output
+            if (aiType.contains("TIME")) r.failureType = "TIMEOUT";
+            else if (aiType.contains("USER") || aiType.contains("OTP") || aiType.contains("PIN")) r.failureType = "USER_ERROR";
+            else if (aiType.contains("LIMIT")) r.failureType = "LIMIT_EXCEEDED";
+            else if (aiType.contains("MERCHANT")) r.failureType = "MERCHANT_ERROR";
+            else if (aiType.contains("DUPLICATE")) r.failureType = "DUPLICATE";
+            else if (aiType.contains("NPCI")) r.failureType = "NPCI_ERROR";
+            else r.failureType = aiType; 
+            
             String sms = originalSms.toLowerCase();
-
-            if (type.contains("TIME"))
-                type = "TIMEOUT";
-
-            else if (type.contains("DUPLICATE"))
-                type = "DUPLICATE";
-
-            else if (type.contains("OTP") || type.contains("PIN"))
-                type = "USER_ERROR";
-
-            else if (type.contains("LIMIT"))
-                type = "LIMIT_EXCEEDED";
-
-            else if (type.contains("MERCHANT"))
-                type = "MERCHANT_ERROR";
-
-            else if (type.contains("NPCI"))
-                type = "NPCI_ERROR";
-
-            else if (type.contains("BANK") ||
-                    type.contains("SERVER") ||
-                    type.contains("TECHNICAL"))
-                type = "BANK_ERROR";
-
-            else {
-
-                if (sms.contains("duplicate"))
-                    type = "DUPLICATE";
-
-                else if (sms.contains("timeout"))
-                    type = "TIMEOUT";
-
-                else if (sms.contains("otp") || sms.contains("pin"))
-                    type = "USER_ERROR";
-
-                else if (sms.contains("limit"))
-                    type = "LIMIT_EXCEEDED";
-
-                else if (sms.contains("merchant"))
-                    type = "MERCHANT_ERROR";
-
-                else if (sms.contains("server")
-                        || sms.contains("technical")
-                        || sms.contains("bank"))
-                    type = "BANK_ERROR";
-
-                else
-                    type = "UNKNOWN";
-            }
-
-            r.failureType = type;
 
             // ---------------- SCORE ----------------
 
